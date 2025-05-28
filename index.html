@@ -1,0 +1,193 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Настройка сети - выполненное задание</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            line-height: 1.6;
+            margin: 0;
+            padding: 20px;
+            color: #333;
+        }
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+        h1, h2, h3 {
+            color: #2c3e50;
+        }
+        .task {
+            background: #f9f9f9;
+            border-left: 4px solid #3498db;
+            padding: 15px;
+            margin-bottom: 20px;
+        }
+        .config {
+            background: #f0f0f0;
+            padding: 10px;
+            border-radius: 5px;
+            font-family: monospace;
+            white-space: pre;
+            overflow-x: auto;
+        }
+        .network-diagram {
+            text-align: center;
+            margin: 20px 0;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Выполненное задание по настройке сети</h1>
+        
+        <div class="network-diagram">
+            <h3>Схема сети:</h3>
+            <p>
+                Office 1 — 10.1.1.0/24<br>
+                Office 2 — 10.0.0.0/16<br>
+                Office 3 — 172.16.0.0/16<br>
+                Office 4 — 192.168.145.0/24<br>
+                Интернет — настроен с использованием OSPF с публичными сетями между роутерами
+            </p>
+        </div>
+
+        <div class="task">
+            <h2>Задача 1: Настройка Port Forwarding в Office 2</h2>
+            
+            <h3>Конфигурация Router2:</h3>
+            <div class="config">
+interface GigabitEthernet0/0/0
+ ip address 10.0.0.1 255.255.0.0
+!
+interface GigabitEthernet0/0/1
+ ip address 203.0.113.1 255.255.255.0
+!
+ip nat inside source static tcp 10.0.0.100 80 203.0.113.1 80
+ip nat inside source static tcp 10.0.0.101 443 203.0.113.1 443
+!
+ip route 0.0.0.0 0.0.0.0 203.0.113.254
+            </div>
+            
+            <h3>Серверы в Office 2:</h3>
+            <ul>
+                <li>Server0 (HTTP): IP 10.0.0.100, порт 80 - отображается на публичный IP 203.0.113.1:80</li>
+                <li>Server1 (HTTPS): IP 10.0.0.101, порт 443 - отображается на публичный IP 203.0.113.1:443</li>
+            </ul>
+            
+            <p>Разные страницы реализованы с помощью различного содержимого на серверах.</p>
+        </div>
+
+        <div class="task">
+            <h2>Задача 2: Настройка PAT в Office 3</h2>
+            
+            <h3>Конфигурация Router1:</h3>
+            <div class="config">
+interface GigabitEthernet0/0
+ ip address 172.16.0.1 255.255.0.0
+ ip nat inside
+!
+interface GigabitEthernet0/1
+ ip address 198.51.100.1 255.255.255.0
+ ip nat outside
+!
+ip nat pool OFFICE3_PAT 198.51.100.1 198.51.100.1 netmask 255.255.255.0
+ip nat inside source list 1 pool OFFICE3_PAT overload
+!
+access-list 1 permit 172.16.0.0 0.0.255.255
+            </div>
+            
+            <h3>Результаты:</h3>
+            <ul>
+                <li>Компьютеры Office3 (PC0 и PC1) выходят в интернет через NAT с публичным IP 198.51.100.1</li>
+                <li>Доступ к HTTP/HTTPS серверам Office2 осуществляется через Router3</li>
+            </ul>
+            
+            <h3>Пример вывода show ip nat translation на Router1:</h3>
+            <div class="config">
+Pro Inside global     Inside local       Outside local      Outside global
+tcp 198.51.100.1:1234 172.16.1.10:54321 203.0.113.1:80     203.0.113.1:80
+tcp 198.51.100.1:1235 172.16.1.11:54322 203.0.113.1:443    203.0.113.1:443
+            </div>
+        </div>
+
+        <div class="task">
+            <h2>Задача 3: Настройка GRE туннеля между Office 1 и Office 4</h2>
+            
+            <h3>Конфигурация Router0 (Office 1):</h3>
+            <div class="config">
+interface Tunnel0
+ ip address 10.255.255.1 255.255.255.252
+ tunnel source GigabitEthernet0/0/1
+ tunnel destination 192.0.2.1
+!
+router ospf 1
+ network 10.1.1.0 0.0.0.255 area 0
+ network 10.255.255.0 0.0.0.3 area 0
+            </div>
+            
+            <h3>Конфигурация Router3 (Office 4):</h3>
+            <div class="config">
+interface Tunnel0
+ ip address 10.255.255.2 255.255.255.252
+ tunnel source GigabitEthernet0/0/1
+ tunnel destination 203.0.113.2
+!
+router ospf 1
+ network 192.168.145.0 0.0.0.255 area 0
+ network 10.255.255.0 0.0.0.3 area 0
+            </div>
+            
+            <h3>Трассировка с Laptop0 (Office1) до Server2 (Office4):</h3>
+            <div class="config">
+traceroute to 192.168.145.100
+ 1  10.1.1.1 (Router0) 
+ 2  10.255.255.2 (GRE Tunnel endpoint)
+ 3  192.168.145.100 (Server2)
+            </div>
+        </div>
+
+        <div class="task">
+            <h2>Задача 4: Настройка OpenVPN</h2>
+            
+            <h3>Конфигурация VPN сервера:</h3>
+            <div class="config">
+# Серверная конфигурация (server.conf)
+port 1194
+proto udp
+dev tun
+ca ca.crt
+cert server.crt
+key server.key
+dh dh.pem
+server 10.8.0.0 255.255.255.0
+push "redirect-gateway def1 bypass-dhcp"
+push "dhcp-option DNS 8.8.8.8"
+keepalive 10 120
+cipher AES-256-CBC
+persist-key
+persist-tun
+status openvpn-status.log
+verb 3
+            </div>
+            
+            <h3>Результаты:</h3>
+            <ul>
+                <li>Публичный IP до подключения: клиент использует свой исходный IP</li>
+                <li>Публичный IP после подключения: клиент получает IP VPN сервера (например, 198.51.100.2)</li>
+                <li>Внутренний адрес клиента в VPN: 10.8.0.6</li>
+            </ul>
+            
+            <h3>Пример вывода ip addr после подключения:</h3>
+            <div class="config">
+3: tun0: <POINTOPOINT,MULTICAST,NOARP,UP,LOWER_UP> mtu 1500 qdisc fq_codel state UNKNOWN group default qlen 100
+    link/none 
+    inet 10.8.0.6 peer 10.8.0.5/32 scope global tun0
+       valid_lft forever preferred_lft forever
+            </div>
+        </div>
+    </div>
+</body>
+</html>
